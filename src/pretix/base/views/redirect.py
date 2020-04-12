@@ -1,0 +1,88 @@
+#
+# This file is part of pretix (Community Edition).
+#
+# Copyright (C) 2014-2020  Raphael Michel and contributors
+# Copyright (C) 2020-today pretix GmbH and contributors
+#
+# This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General
+# Public License as published by the Free Software Foundation in version 3 of the License.
+#
+# ADDITIONAL TERMS APPLY: Pursuant to Section 7 of the GNU Affero General Public License, additional terms are
+# applicable granting you additional permissions and placing additional restrictions on your usage of this software.
+# Please refer to the pretix LICENSE file to obtain the full terms applicable to this work. If you did not receive
+# this file, see <https://pretix.eu/about/en/license>.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied
+# warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Affero General Public License along with this program.  If not, see
+# <https://www.gnu.org/licenses/>.
+#
+import logging
+import urllib.parse
+
+from django.core import signing
+from django.http import HttpResponseBadRequest, HttpResponseRedirect
+from django.shortcuts import render
+from django.urls import reverse
+
+logger = logging.getLogger(__name__)
+
+
+def _is_samesite_referer(request):
+    referer = request.headers.get('referer')
+    if referer is None:
+        return False
+
+    referer = urllib.parse.urlparse(referer)
+
+    # Make sure we have a valid URL for Referer.
+    if '' in (referer.scheme, referer.netloc):
+        return False
+
+    return (referer.scheme, referer.netloc) == (request.scheme, request.get_host())
+
+
+def redir_view(request):
+    framebreak = "framebreak" in request.GET
+    salt = 'framebreak-safelink-url' if framebreak else 'safelink-url'
+    try:
+        url = signing.Signer(salt=salt).unsign(request.GET.get('url', ''))
+    except signing.BadSignature:
+        try:
+            # Backwards-compatibility for a change in 2026-06, remove after a while
+            url = signing.Signer(salt='safe-redirect').unsign(request.GET.get('url', ''))
+        except signing.BadSignature:
+            return HttpResponseBadRequest('Invalid parameter')
+
+    if not _is_samesite_referer(request):
+        u = urllib.parse.urlparse(url)
+        return render(request, 'pretixbase/redirect.html', {
+            'hostname': u.hostname,
+            'url': url,
+        })
+
+    if framebreak:
+        r = render(request, 'pretixbase/framebreak.html', {
+            'url': url,
+        })
+        r.xframe_options_exempt = True
+        return r
+
+    r = HttpResponseRedirect(url)
+    r['X-Robots-Tag'] = 'noindex'
+    return r
+
+
+def safelink(url, framebreak=False):
+    url = str(url)
+    if not (url.startswith('https://') or url.startswith('http://') or url.startswith("/")):
+        logger.warning('Invalid URL passed to safelink: %r', url)
+        return '#invalid-url'
+    salt = 'framebreak-safelink-url' if framebreak else 'safelink-url'
+    signer = signing.Signer(salt=salt)
+    u = reverse('redirect') + '?url=' + urllib.parse.quote(signer.sign(url))
+    if framebreak:
+        u += "&framebreak=true"
+    return u

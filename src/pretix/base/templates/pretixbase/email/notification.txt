@@ -1,0 +1,21 @@
+{% load i18n %}
+{{ notification.title }}{% if notification.detail %}
+
+{{ notification.detail }}{% endif %}{% if notification.url %}
+
+{{ notification.url }}{% endif %}{% if notification.attributes %}
+
+{% for attr in notification.attributes %}- {{ attr.title }}: {{ attr.value }}
+{% endfor %}{% endif %}{% for action in notification.actions %}
+
+{{ action.label }}:
+
+{{ action.url }}{% endfor %}
+
+---
+
+{% trans "You're receiving this email based on your notification settings." %}
+
+- {% trans "Manage settings" %}: {{ settings_url }}
+{% if disable_url %}- {% trans "Disable all notifications" %}: {{ disable_url }}
+{% endif %}

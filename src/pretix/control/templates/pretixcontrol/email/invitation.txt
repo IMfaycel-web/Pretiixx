@@ -1,0 +1,16 @@
+{% load i18n %}{% blocktrans with url=url|safe %}Hello,
+
+You've been invited to join a team on {{ instance }}, an event ticket sales platform.
+
+- Organizer: {{ organizer }}
+- Team: {{ team }}
+
+To accept, follow the link below:
+
+{{ url }}
+
+If you don't want to join, you can safely ignore this email.
+
+Thanks,  
+The {{ instance }} Team
+{% endblocktrans %}

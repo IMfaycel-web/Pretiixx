@@ -1,0 +1,309 @@
+{% extends "pretixcontrol/event/base.html" %}
+{% load i18n %}
+{% load bootstrap3 %}
+{% load formset_tags %}
+{% load eventsignal %}
+{% load static %}
+{% load money %}
+{% load icon %}
+{% block title %}{% blocktrans trimmed with name=subevent.name context "subevent" %}Date: {{ name }}
+{% endblocktrans %}{% endblock %}
+{% block content %}
+    <h1>
+        {% blocktrans trimmed with name=subevent.name context "subevent" %}Date: {{ name }}{% endblocktrans %}
+        {% if 'event.subevents:write' in request.eventpermset %}
+            <a href="{% url "control:event.subevent.edit" event=request.event.slug organizer=request.event.organizer.slug subevent=subevent.pk %}"
+               class="btn btn-default">
+                <span class="fa fa-edit"></span>
+                {% trans "Edit" %}
+            </a>
+        {% endif %}
+    </h1>
+    <div class="row">
+        <div class="{% if "event.orders:read" in request.eventpermset %}col-md-5{% else %}col-md-10{% endif %} col-xs-12">
+            <fieldset>
+                <legend>{% trans "General information" %}</legend>
+                <dl class="dl-horizontal">
+                    <dt>{% trans "Name" %}</dt>
+                    <dd>{{ subevent.name }}</dd>
+                    <dt>{% trans "ID" %}</dt>
+                    <dd>#{{ subevent.pk }}</dd>
+                    <dt>{% trans "Status" %}</dt>
+                    <dd>
+                        {% if not subevent.active %}
+                            <span class="label label-danger">{% trans "Disabled" %}</span>
+                        {% elif subevent.presale_has_ended %}
+                            <span class="label label-warning">{% trans "Presale over" %}</span>
+                        {% elif not subevent.presale_is_running %}
+                            <span class="label label-warning">{% trans "Presale not started" %}</span>
+                        {% else %}
+                            <span class="label label-success">{% trans "On sale" %}</span>
+                        {% endif %}
+                    </dd>
+                    <dt>{% trans "Event start time" %}</dt>
+                    <dd>{{ subevent.date_from|date:"SHORT_DATETIME_FORMAT" }}</dd>
+                    <dt>{% trans "Event end time" %}</dt>
+                    <dd>{{ subevent.date_to|date:"SHORT_DATETIME_FORMAT" }}</dd>
+                    {% if subevent.date_admission %}
+                        <dt>{% trans "Admission time" %}</dt>
+                        <dd>{{ subevent.date_admission|date:"SHORT_DATETIME_FORMAT" }}</dd>
+                    {% endif %}
+                    {% if subevent.presale_start %}
+                        <dt>{% trans "Start of presale" %}</dt>
+                        <dd>{{ subevent.presale_start|date:"SHORT_DATETIME_FORMAT" }}</dd>
+                    {% endif %}
+                    {% if subevent.presale_end %}
+                        <dt>{% trans "End of presale" %}</dt>
+                        <dd>{{ subevent.presale_end|date:"SHORT_DATETIME_FORMAT" }}</dd>
+                    {% endif %}
+                    {% if subevent.location %}
+                        <dt>{% trans "Location" %}</dt>
+                        <dd>{{ subevent.location|linebreaksbr }}</dd>
+                    {% endif %}
+                    <dt>{% trans "Show in lists" %}</dt>
+                    <dd>{{ subevent.is_public|yesno }}</dd>
+                    {% for k, v in subevent.meta_data.items %}
+                        <dt>{{ k }}</dt>
+                        <dd>{{ v }}</dd>
+                    {% endfor %}
+                    {% if subevent.comment %}
+                        <dt>{% trans "Internal comment" %}</dt>
+                        <dd>{{ subevent.comment|linebreaksbr }}</dd>
+                    {% endif %}
+                </dl>
+            </fieldset>
+            <fieldset>
+                <legend>{% trans "Quotas" %}</legend>
+                <div class="table-responsive">
+                    <table class="table table-hover table-quotas">
+                        <thead>
+                        <tr>
+                            <th>{% trans "Quota name" %}</th>
+                            <th>{% trans "Products" %}</th>
+                            <th>{% trans "Total capacity" %}</th>
+                            <th>{% trans "Capacity left" %}</th>
+                            <th class="action-col-2"></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for q in quotas %}
+                            <tr>
+                                <td>
+                                    <strong><a
+                                            href="{% url "control:event.items.quotas.show" organizer=request.event.organizer.slug event=request.event.slug quota=q.id %}">{{ q.name }}</a></strong>
+                                    {% if q.ignore_for_event_availability %}
+                                        <span class="fa fa-eye-slash text-muted" data-toggle="tooltip"
+                                              title="{% trans "Ignore this quota when determining event availability" %}"></span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <ul>
+                                        {% for item in q.cached_items %}
+                                            {% if not item.has_variations %}
+                                                <li>
+                                                    <a href="{% url "control:event.item" organizer=request.event.organizer.slug event=request.event.slug item=item.id %}">{{ item }}</a>
+                                                </li>
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% for v in q.variations.all %}
+                                            <li>
+                                                <a href="{% url "control:event.item" organizer=request.event.organizer.slug event=request.event.slug item=v.item.id %}#tab-0-3-open">
+                                                    {{ v.item }} – {{ v }}</a></li>
+                                        {% endfor %}
+                                    </ul>
+                                </td>
+                                <td>{% if q.size == None %}Unlimited{% else %}{{ q.size }}{% endif %}</td>
+                                <td>{% include "pretixcontrol/items/fragment_quota_availability.html" with availability=q.cached_avail closed=q.closed %}</td>
+                                <td class="text-right flip">
+                                    {% if 'event.items:write' in request.eventpermset %}
+                                        <a href="{% url "control:event.items.quotas.edit" organizer=request.event.organizer.slug event=request.event.slug quota=q.id %}"
+                                           class="btn btn-default btn-sm"><i class="fa fa-edit"></i></a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </fieldset>
+            {% if checkinlists %}
+                <fieldset>
+                    <legend>{% trans "Check-in lists" %}</legend>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-quotas">
+                            <thead>
+                            <tr>
+                                <th>{% trans "Name" %}</th>
+                                {% if "event.orders:read" in request.eventpermset %}
+                                    <th>{% trans "Checked in" %}</th>
+                                {% endif %}
+                                <th>{% trans "Products" %}</th>
+                                <th class="action-col-2"></th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {% for cl in checkinlists %}
+                                <tr>
+                                    <td>
+                                        <strong><a
+                                                href="{% url "control:event.orders.checkinlists.show" organizer=request.event.organizer.slug event=request.event.slug list=cl.id %}">{{ cl.name }}</a></strong>
+                                    </td>
+                                    {% if "event.orders:read" in request.eventpermset %}
+                                        <td>
+                                            <div class="quotabox availability">
+                                                <div class="progress">
+                                                    <div class="progress-bar progress-bar-success progress-bar-{{ cl.percent }}">
+                                                    </div>
+                                                </div>
+                                                <div class="numbers">
+                                                    {{ cl.checkin_count|default_if_none:"0" }} /
+                                                    {{ cl.position_count|default_if_none:"0" }}
+                                                </div>
+                                            </div>
+                                        </td>
+                                    {% endif %}
+                                    <td>
+                                        {% if cl.all_products %}
+                                            <em>{% trans "All" %}</em>
+                                        {% else %}
+                                            <ul>
+                                                {% for item in cl.limit_products.all %}
+                                                    <li>
+                                                        <a href="{% url "control:event.item" organizer=request.event.organizer.slug event=request.event.slug item=item.id %}">{{ item }}</a>
+                                                    </li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-right flip">
+                                        {% if "event.orders:read" in request.eventpermset %}
+                                            <a href="{% url "control:event.orders.checkinlists.show" organizer=request.event.organizer.slug event=request.event.slug list=cl.id %}"
+                                               class="btn btn-default btn-sm"><i class="fa fa-eye"></i></a>
+                                        {% endif %}
+                                        {% if "event.settings.general:write" in request.eventpermset %}
+                                            <a href="{% url "control:event.orders.checkinlists.add" organizer=request.event.organizer.slug event=request.event.slug %}?copy_from={{ cl.id }}"
+                                               class="btn btn-sm btn-default" title="{% trans "Clone" %}"
+                                               data-toggle="tooltip">
+                                                <span class="fa fa-copy"></span>
+                                            </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                </fieldset>
+            {% endif %}
+            {% eventsignal request.event "pretix.control.signals.subevent_detail_html" subevent=subevent %}
+        </div>
+        {% if "event.orders:read" in request.eventpermset %}
+            <div class="col-md-5 col-xs-12">
+                <fieldset>
+                    <legend>
+                        {% trans "Orders" %}
+                        <span class="badge">
+                            {{ order_count }}
+                        </span>
+                    </legend>
+                    {% if order_count %}
+                        <div class="table-responsive">
+                            <table class="table table-condensed table-hover table-orders">
+                                <thead>
+                                <tr>
+                                    <th>{% trans "Order code" %}</th>
+                                    <th>{% trans "Details" %}</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                {% for o in orders %}
+                                    <tr>
+                                        <td>
+                                            <strong>
+                                                <a href="{% url "control:event.order" event=request.event.slug organizer=request.event.organizer.slug code=o.code %}">
+                                                    {{ o.code }}
+                                                </a>
+                                            </strong>
+                                            <br>
+                                            {% if o.testmode %}
+                                                <span class="label label-warning">{% trans "TEST MODE" %}</span>
+                                            {% endif %}
+                                            {% if o.status == "p" and o.pcnt == 0 %}
+                                                {# Everything related to this subevent is canceled #}
+                                                <span class="label label-danger">
+                                                <span class="fa fa-times"></span>
+                                                {% trans "partially canceled" %}
+                                            </span>
+                                            {% else %}
+                                                {% include "pretixcontrol/orders/fragment_order_status.html" with order=o %}
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if "." in o.sales_channel.icon %}
+                                                <img src="{% static o.sales_channel.icon %}" class="fa-like-image"
+                                                     data-toggle="tooltip" title="{{ o.sales_channel.label }}">
+                                            {% else %}
+                                                <span class="fa fa-fw fa-{{ o.sales_channel.icon }} text-muted"
+                                                      data-toggle="tooltip" title="{{ o.sales_channel.label }}"></span>
+                                            {% endif %}
+                                            {{ o.datetime|date:"SHORT_DATETIME_FORMAT" }}
+                                            {% if o.email %}
+                                                <br>{% icon "envelope-o fa-fw text-muted" %}
+                                                {{ o.email|default_if_none:"" }}
+                                            {% endif %}
+                                            {% if o.invoice_address.name %}
+                                                <br>{% icon "user fa-fw text-muted" %} {{ o.invoice_address.name }}
+                                            {% endif %}
+                                            <br>{% icon "ticket text-muted fa-fw" %} {{ o.pcnt }}
+                                            {% if o.comment %}
+                                                <br>
+                                                <span class="text-muted">
+                                                {{ o.comment|linebreaksbr }}
+                                            </span>
+                                            {% endif %}
+                                            {% if o.custom_followup_due %}
+                                                <br>
+                                                <span class="label label-danger">{% blocktrans trimmed with date=o.custom_followup_at|date:"SHORT_DATE_FORMAT" context "followup" %}
+                                                    TODO {{ date }}{% endblocktrans %}</span>
+                                            {% elif o.custom_followup_at %}
+                                                <br>
+                                                <span class="label label-default">{% blocktrans trimmed with date=o.custom_followup_at|date:"SHORT_DATE_FORMAT" context "followup" %}
+                                                    TODO {{ date }}{% endblocktrans %}</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% if order_count > 10 %}
+                            <p class="text-center">
+                                <a href="{% url "control:event.orders" organizer=request.organizer.slug event=request.event.slug %}?subevent={{ subevent.pk }}"
+                                   class="btn btn-default">
+                                    {% trans "View all" %}
+                                </a>
+                            </p>
+                        {% endif %}
+                    {% else %}
+                        <div class="empty-collection">
+                            <p>
+                                {% blocktrans trimmed %}
+                                    No orders found.
+                                {% endblocktrans %}
+                            </p>
+                        </div>
+                    {% endif %}
+                </fieldset>
+            </div>
+        {% endif %}
+        <div class="col-md-2 col-xs-12">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <h3 class="panel-title">
+                        {% trans "Date history" context "subevent" %}
+                    </h3>
+                </div>
+                {% include "pretixcontrol/includes/logs.html" with obj=subevent %}
+            </div>
+        </div>
+    </div>
+{% endblock %}
